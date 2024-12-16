@@ -5,4 +5,3 @@ fn main() {
     println!("Safety factor: {}", safety_factor);
 }
 
-
