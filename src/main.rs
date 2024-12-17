@@ -1,8 +1,10 @@
-use day_16::solve;
+use day_16::{count_tiles, solve};
 
 fn main() {
     let lowest_score = solve("src/resources/puzzle.txt");
-    //128460 too high
     println!("Lowest score: {}", lowest_score);
+
+    let tiles = count_tiles("src/resources/puzzle.txt");
+    println!("Tiles: {}", tiles);
 }
 

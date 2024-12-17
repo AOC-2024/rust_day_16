@@ -1,6 +1,7 @@
+use std::collections::HashSet;
 use crate::Direction::{DOWN, LEFT, RIGHT, UP};
 use std::fs::read_to_string;
-use pathfinding::prelude::dijkstra;
+use pathfinding::prelude::{dijkstra, yen};
 
 
 pub fn solve(input_path: &str) -> isize {
@@ -12,6 +13,31 @@ pub fn solve(input_path: &str) -> isize {
     let result = dijkstra(&start, |node| successors(node, &puzzle), |node| node.position == puzzle.end).expect("No path found");
 
     result.1
+}
+
+pub fn count_tiles(input_path: &str) -> isize {
+    let puzzle = extract_puzzle(input_path);
+    let start = Node {
+        position: puzzle.start.clone(),
+        direction: RIGHT,
+    };
+
+    let result = yen(
+        &start,
+        |node| successors(node, &puzzle),
+        |node| node.position == puzzle.end,
+        30,
+    );
+
+    let best_path_cost = result.first().unwrap().1;
+
+    result
+        .iter()
+        .filter(|(_, cost)| *cost == best_path_cost)
+        .map(|(nodes, _)| nodes.iter().map(|node| node.position).collect::<Vec<Position>>())
+        .flatten()
+        .collect::<HashSet<isize>>()
+        .len() as isize
 }
 
 fn successors(node: &Node, puzzle: &Puzzle) -> Vec<(Node, isize)> {
@@ -45,7 +71,7 @@ struct Node {
     direction: Direction,
 }
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Copy)]
 struct Position(isize, isize);
 
 fn extract_puzzle(input_path: &str) -> Puzzle {
