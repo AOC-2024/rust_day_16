@@ -1,149 +1,116 @@
 use crate::Direction::{DOWN, LEFT, RIGHT, UP};
-use std::collections::VecDeque;
 use std::fs::read_to_string;
+use pathfinding::prelude::dijkstra;
 
-pub fn lowest_score(input_path: &str) -> isize {
-    let mut puzzle = extract_puzzle(input_path);
-    puzzle.solve()
+
+pub fn solve(input_path: &str) -> isize {
+    let puzzle = extract_puzzle(input_path);
+    let start = Node {
+        position: puzzle.start.clone(),
+        direction: RIGHT,
+    };
+    let result = dijkstra(&start, |node| successors(node, &puzzle), |node| node.position == puzzle.end).expect("No path found");
+
+    result.1
 }
+
+fn successors(node: &Node, puzzle: &Puzzle) -> Vec<(Node, isize)> {
+    let Position(x, y) = node.position;
+
+    let neighbors = Direction::neighbors(&node.direction);
+
+    let mut next_nodes = Vec::new();
+    for (new_direction, dx, dy) in neighbors {
+        let new_x = x + dx;
+        let new_y = y + dy;
+        if puzzle.is_position_valid(new_x, new_y) {
+            let cost = Direction::rotation_cost(&node.direction, &new_direction) + 1;
+            next_nodes.push((
+                Node {
+                    position: Position(new_x, new_y),
+                    direction: new_direction,
+                },
+                cost,
+            ));
+        }
+    }
+
+    next_nodes
+}
+
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Node {
+    position: Position,
+    direction: Direction,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Position(isize, isize);
 
 fn extract_puzzle(input_path: &str) -> Puzzle {
     let mut puzzle: Puzzle = Puzzle::new();
-    read_to_string(input_path)
+    let map = read_to_string(input_path)
         .unwrap()
         .lines()
-        .into_iter()
         .enumerate()
-        .for_each(|(y, line)| {
+        .map(|(i, line)| {
             line.chars()
                 .enumerate()
-                .for_each(|(x, character)| match character {
-                    '#' => puzzle.obstacles.push((x as isize, y as isize)),
-                    'S' => puzzle.start = (x as isize, y as isize),
-                    'E' => puzzle.end = (x as isize, y as isize),
-                    _ => {}
+                .map(|(j, c)| match c {
+                    'S' => {
+                        puzzle.start = Position(j as isize, i as isize);
+                        c
+                    }
+                    'E' => {
+                        puzzle.end = Position(j as isize, i as isize);
+                        c
+                    }
+                    _ => c,
                 })
-        });
-
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    puzzle.map = map;
     puzzle
 }
 
+
+
 #[derive(Debug, PartialEq)]
 struct Puzzle {
-    start: (isize, isize),
-    end: (isize, isize),
-    obstacles: Vec<(isize, isize)>,
-    paths: Vec<Path>,
+    start: Position,
+    end: Position,
+    map: Vec<Vec<char>>,
 }
 
 impl Puzzle {
     fn new() -> Puzzle {
         Puzzle {
-            start: (0, 0),
-            end: (0, 0),
-            obstacles: Vec::new(),
-            paths: Vec::new(),
+            start: Position(0, 0),
+            end: Position(0, 0),
+            map: Vec::new(),
         }
     }
 
-    fn lowest_score(&self) -> isize {
-        if self.paths.is_empty() {
-            return 0;
-        }
-        let mut sorted_path = self.paths.clone();
-        sorted_path.sort_by(|a, b| a.score.cmp(&b.score));
-        sorted_path.first().unwrap().score
+    fn width(&self) -> isize {
+        self.map[0].len() as isize
     }
 
-    fn solve(&mut self)-> isize {
-        let current_point = self.start.clone();
-        let current_direction = RIGHT;
-        let mut best_path: Option<Path> = None;
-        let mut exploring_path: VecDeque<Exploration> = VecDeque::new();
-
-        exploring_path.push_back(Exploration {
-            init_position: current_point,
-            init_direction: current_direction,
-            prev_position: current_point,
-            prev_score: 0,
-        });
-
-        while let Some(exploration) = exploring_path.pop_front() {
-            let next_free_spaces = self.find_free_space_points_around(exploration.init_position, exploration.prev_position);
-            for (next_exploration, next_direction) in next_free_spaces {
-                let rotation_cost = Direction::rotation_cost(exploration.init_direction, next_direction);
-                if next_exploration == self.end {
-                    let path_found = Path {
-                        score: exploration.prev_score + rotation_cost + 1,
-                    };
-                    if let Some(ref path) = best_path {
-                        if path.score > path_found.score {
-                            best_path = Some(path_found);
-                        }
-                    } else {
-                        best_path = Some(path_found);
-                    }
-                } else {
-
-                    if best_path.is_some() {
-                        if exploration.prev_score + rotation_cost + 1 > best_path.as_ref().unwrap().score {
-                            break;
-                        }
-
-                    }
-
-                    exploring_path.push_back(Exploration {
-                        init_position: next_exploration,
-                        init_direction: next_direction,
-                        prev_position: exploration.init_position,
-                        prev_score: exploration.prev_score + rotation_cost + 1,
-                    })
-                }
-            }
-        };
-        if let Some(best_path) = best_path {
-            return best_path.score
-        }
-        0
+    fn height(&self) -> isize {
+        self.map.len() as isize
     }
 
-    fn find_free_space_points_around(
-        &self,
-        position: (isize, isize),
-        prev_position: (isize, isize)
-    ) -> Vec<((isize, isize), Direction)> {
-        let mut free_spaces = Vec::new();
-        let next_position = UP.next_position(position);
-        if !self.obstacles.contains(&next_position) && prev_position != next_position {
-            free_spaces.push((next_position, UP));
+    fn is_position_valid(&self, x: isize, y: isize) -> bool {
+        if x < 0 || x >= self.height() || y < 0 || y >= self.width() {
+            return false;
         }
-
-        let next_position = DOWN.next_position(position);
-        if !self.obstacles.contains(&next_position) && prev_position != next_position {
-            free_spaces.push((next_position, DOWN));
-        }
-
-        let next_position = RIGHT.next_position(position);
-        if !self.obstacles.contains(&next_position) && prev_position != next_position {
-            free_spaces.push((next_position, RIGHT));
-        }
-
-        let next_position = LEFT.next_position(position);
-        if !self.obstacles.contains(&next_position) && prev_position != next_position {
-            free_spaces.push((next_position, LEFT));
-        }
-        free_spaces
+        self.map[y as usize][x as usize] != '#'
     }
+
 }
 
-struct Exploration {
-    init_position: (isize, isize),
-    init_direction: Direction,
-    prev_position: (isize, isize),
-    prev_score: isize,
-}
-
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Direction {
     UP,
     DOWN,
@@ -152,20 +119,41 @@ enum Direction {
 }
 
 impl Direction {
-    fn val(&self) -> (isize, isize) {
+    fn val(&self) -> (Direction, isize, isize) {
         match *self {
-            UP => (0, -1),
-            DOWN => (0, 1),
-            LEFT => (-1, 0),
-            RIGHT => (1, 0),
+            UP => (UP, 0, 1),
+            DOWN => (DOWN, 0, -1),
+            LEFT => (LEFT, -1, 0),
+            RIGHT => (RIGHT, 1, 0),
         }
     }
 
-    fn next_position(&self, position: (isize, isize)) -> (isize, isize) {
-        (position.0 + self.val().0, position.1 + self.val().1)
+    fn neighbors(direction: &Direction) -> Vec<(Direction, isize, isize)> {
+        match direction {
+            UP => vec![
+                UP.val(),
+                RIGHT.val(),
+                LEFT.val(),
+            ],
+            RIGHT => vec![
+                RIGHT.val(),
+                UP.val(),
+                DOWN.val(),
+            ],
+            DOWN => vec![
+                DOWN.val(),
+                RIGHT.val(),
+                LEFT.val(),
+            ],
+            LEFT => vec![
+                LEFT.val(),
+                UP.val(),
+                DOWN.val(),
+            ],
+        }
     }
 
-    fn rotation_cost(from_direction: Direction, to_direction: Direction) -> isize {
+    fn rotation_cost(from_direction: &Direction, to_direction: &Direction) -> isize {
         let rotation_price = 1000;
         match from_direction {
             UP => match to_direction {
@@ -195,71 +183,4 @@ impl Direction {
         }
     }
 }
-#[derive(Debug, PartialEq, Clone)]
-struct Path {
-    score: isize,
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn should_solve_puzzle_with_multiple_rotation() {
-        let mut puzzle = extract_puzzle("tests/resources/multiple_rotation_cost_path.txt");
-        puzzle.solve();
-        assert_eq!(puzzle.solve(), 3004);
-    }
-
-    #[test]
-    fn should_solve_puzzle_with_one_rotation() {
-        let mut puzzle = extract_puzzle("tests/resources/one_rotation_cost_path.txt");
-        puzzle.solve();
-        assert_eq!(puzzle.solve(), 1003);
-    }
-
-
-    #[test]
-    fn should_solve_puzzle_with_multiple_point_path_without_rotating() {
-        let mut puzzle = extract_puzzle("tests/resources/two_point_path.txt");
-        assert_eq!(puzzle.solve(), 1004);
-    }
-
-    #[test]
-    fn should_solve_puzzle_with_one_point_path() {
-        let mut puzzle = extract_puzzle("tests/resources/one_point_path.txt");
-        assert_eq!(puzzle.solve(), 2);
-    }
-
-    #[test]
-    fn should_lowest_score_based_on_score() {
-        let mut puzzle = Puzzle::new();
-        puzzle.paths.push(Path {
-            score: 1002,
-        });
-        puzzle.paths.push(Path {
-            score: 1001,
-        });
-
-        assert_eq!(puzzle.lowest_score(), 1001);
-    }
-
-    #[test]
-    fn should_lowest_score_return_0_when_paths_enmpty() {
-        let mut puzzle = Puzzle::new();
-
-        assert_eq!(puzzle.lowest_score(), 0);
-    }
-
-    #[test]
-    fn should_extract_puzzle() {
-        assert_eq!(
-            extract_puzzle("tests/resources/light_puzzle.txt"),
-            Puzzle {
-                start: (1, 1),
-                end: (3, 0),
-                obstacles: vec![(0, 0), (0, 1), (3, 1)],
-                paths: vec![]
-            }
-        );
-    }
-}

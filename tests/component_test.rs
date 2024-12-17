@@ -1,6 +1,6 @@
-use day_16::lowest_score;
+use day_16::solve;
 
 #[test]
 fn should_count_lowest_sore() {
-    assert_eq!(lowest_score("tests/resources/puzzle.txt"), 7036);
+    assert_eq!(solve("tests/resources/puzzle.txt"), 7036);
 }
